@@ -1,0 +1,60 @@
+version: '3.8'
+services:
+  proxy:
+    build:
+      dockerfile: Dockerfile-nginx
+    domainname: rocket-chat
+    ports:
+      - "0.0.0.0:8888:8888"
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.10
+
+  mongo:
+    restart: unless-stopped
+    image: mongo:4.2
+    volumes:
+      - /var/mongo/db:/data/db
+      - /var/mongo/backups:/backups
+    command: mongod --oplogSize 128 --replSet rs0
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.11
+
+  # this container's job is just run the command to initialize the replica set.
+  # it will run the command and remove himself (it will not stay running)
+  mongo-init-replica:
+    image: mongo:4.2
+    command: 'bash -c "for i in `seq 1 30`; do mongo mongo/rocketchat --eval \"rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: ''localhost:27017'' } ]})\" && s=$$? && break || s=$$?; echo \"Tried $$i times. Waiting 5 secs...\"; sleep 5; done; (exit $$s)"'
+    depends_on:
+      - mongo
+
+  rocketchat:
+    restart: unless-stopped
+    image: rocketchat/rocket.chat:4.5.0
+    command: bash -c 'for i in `seq 1 30`; do node main.js && s=$$? && break || s=$$?; echo "Tried $$i times. Waiting 5 secs..."; sleep 5; done; (exit $$s)'
+    ports:
+      - "0.0.0.0:3333:3333"
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URL=mongodb://mongo/rocket
+      - MONGO_OPLOG_URL=mongodb://mongo/local
+      - ROOT_URL=https://rocket-chat
+      - PORT=3333
+      # the SMTP port is likely to be 587 or 465, and instead of smtp:// you might need to use smtps:// (note the 's' for secure).
+      # - MAIL_URL=smtp://[smtp username]:[smtp password]@[smtp servername]:[smtp port]/  
+    volumes:
+      - /home/data/rocket-chat/uploads:/app/uploads
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.12
+
+networks:
+  rocketchat_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.16.238.0/24
+          gateway: 172.16.238.1
