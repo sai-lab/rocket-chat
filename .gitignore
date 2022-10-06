@@ -2,5 +2,7 @@
 
 mongo/data/*
 mongo/log/*
+mongo/bkp/*
 !mongo/log/.gitkeep
 !mongo/data/.gitkeep
+!mongo/bkp/.gitkeep

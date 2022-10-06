@@ -1,0 +1,1 @@
+*  *    * * *    mongodump --uri=mongodb://mongodb:${MONGODB_PORT_NUMBER:-27017}/${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0} --out=${MONGODB_BUCKUP_PATH:-/bkp}
