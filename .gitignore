@@ -1,1 +1,6 @@
 .vagrant
+
+mongo/data/*
+mongo/log/*
+!mongo/log/.gitkeep
+!mongo/data/.gitkeep

@@ -1,54 +1,64 @@
 version: '3.8'
+
 services:
-  proxy:
+  nginx-proxy:
     build:
       dockerfile: Dockerfile-nginx
     domainname: rocket-chat
+    depends_on:
+      - rocketchat
     ports:
       - "0.0.0.0:8888:8888"
     networks:
       rocketchat_net:
-        ipv4_address: 172.16.238.10
-
-  mongo:
-    restart: unless-stopped
-    image: mongo:4.2
-    volumes:
-      - /var/mongo/db:/data/db
-      - /var/mongo/backups:/backups
-    command: mongod --oplogSize 128 --replSet rs0
-    networks:
-      rocketchat_net:
-        ipv4_address: 172.16.238.11
-
-  # this container's job is just run the command to initialize the replica set.
-  # it will run the command and remove himself (it will not stay running)
-  mongo-init-replica:
-    image: mongo:4.2
-    command: 'bash -c "for i in `seq 1 30`; do mongo mongo/rocketchat --eval \"rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: ''localhost:27017'' } ]})\" && s=$$? && break || s=$$?; echo \"Tried $$i times. Waiting 5 secs...\"; sleep 5; done; (exit $$s)"'
-    depends_on:
-      - mongo
 
   rocketchat:
-    restart: unless-stopped
-    image: rocketchat/rocket.chat:4.5.0
-    command: bash -c 'for i in `seq 1 30`; do node main.js && s=$$? && break || s=$$?; echo "Tried $$i times. Waiting 5 secs..."; sleep 5; done; (exit $$s)'
-    ports:
-      - "0.0.0.0:3333:3333"
-    depends_on:
-      - mongo
+    image: registry.rocket.chat/rocketchat/rocket.chat:${RELEASE:-latest}
+    restart: on-failure
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.rocketchat.rule: Host(`${DOMAIN}`)
+      traefik.http.routers.rocketchat.tls: "true"
+      traefik.http.routers.rocketchat.entrypoints: https
+      traefik.http.routers.rocketchat.tls.certresolver: le
     environment:
-      - MONGO_URL=mongodb://mongo/rocket
-      - MONGO_OPLOG_URL=mongodb://mongo/local
-      - ROOT_URL=https://rocket-chat
-      - PORT=3333
-      # the SMTP port is likely to be 587 or 465, and instead of smtp:// you might need to use smtps:// (note the 's' for secure).
-      # - MAIL_URL=smtp://[smtp username]:[smtp password]@[smtp servername]:[smtp port]/  
-    volumes:
-      - /home/data/rocket-chat/uploads:/app/uploads
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      MONGO_OPLOG_URL: "${MONGO_OPLOG_URL:\
+        -mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        local?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      ROOT_URL: ${ROOT_URL:-http://localhost:${HOST_PORT:-3000}}
+      PORT: ${PORT:-3000}
+      DEPLOY_METHOD: docker
+      DEPLOY_PLATFORM: ${DEPLOY_PLATFORM}
+    depends_on:
+      - mongodb
+    expose:
+      - ${PORT:-3000}
+    ports:
+      - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-3000}:${PORT:-3000}"
     networks:
       rocketchat_net:
-        ipv4_address: 172.16.238.12
+
+  mongodb:
+    image: docker.io/bitnami/mongodb:${MONGODB_VERSION:-4.4}
+    restart: on-failure
+    volumes:
+      - type: bind
+        source: ./mongo/data
+        target: /bitnami/mongodb
+    environment:
+      MONGODB_REPLICA_SET_MODE: primary
+      MONGODB_REPLICA_SET_NAME: ${MONGODB_REPLICA_SET_NAME:-rs0}
+      MONGODB_PORT_NUMBER: ${MONGODB_PORT_NUMBER:-27017}
+      MONGODB_INITIAL_PRIMARY_HOST: ${MONGODB_INITIAL_PRIMARY_HOST:-mongodb}
+      MONGODB_INITIAL_PRIMARY_PORT_NUMBER: ${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}
+      MONGODB_ADVERTISED_HOSTNAME: ${MONGODB_ADVERTISED_HOSTNAME:-mongodb}
+      MONGODB_ENABLE_JOURNAL: ${MONGODB_ENABLE_JOURNAL:-true}
+      ALLOW_EMPTY_PASSWORD: ${ALLOW_EMPTY_PASSWORD:-yes}
+    networks:
+      rocketchat_net:
 
 networks:
   rocketchat_net:
