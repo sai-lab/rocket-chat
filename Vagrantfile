@@ -7,8 +7,7 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.synced_folder ".", "/home/vagrant/rocket-chat"
-  config.vm.network "forwarded_port", guest: 3333, host: 3333
-  config.vm.network "private_network", ip: "192.168.33.10"
+  config.vm.network "forwarded_port", guest: 8888, host: 8888
 
   config.vm.provider "libvirt" do |v|
     v.cpus = 4

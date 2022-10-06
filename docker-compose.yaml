@@ -7,10 +7,15 @@ services:
     domainname: rocket-chat
     depends_on:
       - rocketchat
+      - rocketchat_account
+      - rocketchat_authorization
+      - rocketchat_ddpstreamer
+      - rocketchat_presence
     ports:
       - "0.0.0.0:8888:8888"
     networks:
       rocketchat_net:
+        ipv4_address: 172.16.238.2
 
   rocketchat:
     image: registry.rocket.chat/rocketchat/rocket.chat:${RELEASE:-latest}
@@ -32,14 +37,78 @@ services:
       PORT: ${PORT:-3000}
       DEPLOY_METHOD: docker
       DEPLOY_PLATFORM: ${DEPLOY_PLATFORM}
+      TRANSPORTER: nats://nats:4222
+      DISABLE_DB_WATCH: true
+      DISABLE_PRESENCE_MONITOR: true
+      INTERNAL_SERVICES_ONLY: true
+      Accounts_UseDNSDomainCheck: "false"
     depends_on:
       - mongodb
-    expose:
-      - ${PORT:-3000}
+      - nats
     ports:
-      - "${BIND_IP:-0.0.0.0}:${HOST_PORT:-3000}:${PORT:-3000}"
+      - "0.0.0.0:3000:3000"
     networks:
       rocketchat_net:
+        ipv4_address: 172.16.238.3
+  
+  rocketchat_account:
+    image: rocketchat/account-service:latest
+    restart: on-failure
+    environment:
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      TRANSPORTER: nats://nats:4222
+    depends_on:
+      - mongodb
+      - nats
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.4
+  
+  rocketchat_authorization:
+    image: rocketchat/authorization-service:latest
+    environment:
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      TRANSPORTER: nats://nats:4222
+    depends_on:
+      - mongodb
+      - nats
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.5
+  
+  rocketchat_ddpstreamer:
+    image: rocketchat/ddp-streamer-service:latest
+    restart: on-failure
+    environment:
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      TRANSPORTER: nats://nats:4222
+    depends_on:
+      - mongodb
+      - nats
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.6
+  
+  rocketchat_presence:
+    image: rocketchat/presence-service:latest
+    restart: on-failure
+    environment:
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      TRANSPORTER: nats://nats:4222
+    depends_on:
+      - mongodb
+      - nats
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.7
 
   mongodb:
     image: docker.io/bitnami/mongodb:${MONGODB_VERSION:-4.4}
@@ -59,7 +128,23 @@ services:
       ALLOW_EMPTY_PASSWORD: ${ALLOW_EMPTY_PASSWORD:-yes}
     networks:
       rocketchat_net:
+        ipv4_address: 172.16.238.8
   
+  mongodb_stream_hub:
+    image: rocketchat/stream-hub-service:latest
+    restart: on-failure
+    environment:
+      MONGO_URL: "${MONGO_URL:-\
+        mongodb://${MONGODB_ADVERTISED_HOSTNAME:-mongodb}:${MONGODB_INITIAL_PRIMARY_PORT_NUMBER:-27017}/\
+        ${MONGODB_DATABASE:-rocketchat}?replicaSet=${MONGODB_REPLICA_SET_NAME:-rs0}}"
+      TRANSPORTER: nats://nats:4222
+    depends_on:
+      - mongodb
+      - nats
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.9
+
   mongodb_bkp:
     build:
       dockerfile: ./mongo/dockerfile/Dockerfile-mongo-bkp
@@ -78,6 +163,16 @@ services:
       MONGODB_BUCKUP_PATH: ${MONGODB_BUCKUP_PATH:-/bkp}
     networks:
       rocketchat_net:
+        ipv4_address: 172.16.238.10
+
+  nats:
+    image: nats
+    restart: on-failure
+    ports:
+      - "0.0.0.0:8222:8222"
+    networks:
+      rocketchat_net:
+        ipv4_address: 172.16.238.11
 
 networks:
   rocketchat_net:
